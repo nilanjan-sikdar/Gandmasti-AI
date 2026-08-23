@@ -1,0 +1,160 @@
+# Full Supabase Authentication Guide (Email & Google)
+
+This document outlines the complete process to integrate Supabase authentication into a frontend application (like React/Next.js).
+
+## 1. Initial Setup
+
+### A. Create a Supabase Project
+1. Go to https://supabase.com/dashboard and create a new project.
+2. Once the project is ready, go to Project Settings -> API.
+3. Note down your `Project URL` and `anon public key`.
+
+### B. Install Supabase Client
+Run the following command in your frontend project:
+`npm install @supabase/supabase-js`
+
+### C. Initialize Supabase Client
+Create a file (e.g., `supabaseClient.js`) and initialize the client:
+```javascript
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'YOUR_SUPABASE_URL'
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'YOUR_SUPABASE_ANON_KEY'
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+```
+
+---
+
+## 2. Email & Password Authentication
+
+### A. Configuration in Supabase Dashboard
+1. Go to Authentication -> Providers.
+2. Ensure "Email" is enabled.
+3. Configure settings like "Confirm email" (if you want users to verify their email before logging in).
+
+### B. Sign Up Process
+```javascript
+async function signUpWithEmail(email, password) {
+  const { data, error } = await supabase.auth.signUp({
+    email: email,
+    password: password,
+  })
+
+  if (error) {
+    console.error("Error signing up:", error.message)
+    return { error }
+  }
+  // If email confirmation is ON, ask user to check their email.
+  console.log("User signed up:", data)
+  return { data }
+}
+```
+
+### C. Log In Process
+```javascript
+async function signInWithEmail(email, password) {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email,
+    password: password,
+  })
+
+  if (error) {
+    console.error("Error signing in:", error.message)
+    return { error }
+  }
+  console.log("User logged in:", data)
+  return { data }
+}
+```
+
+---
+
+## 3. Google OAuth Authentication
+
+### A. Configuration in Google Cloud Console
+1. Go to https://console.cloud.google.com/
+2. Create a project and navigate to "APIs & Services" -> "Credentials".
+3. Configure the "OAuth consent screen".
+4. Create new "OAuth client ID" credentials (Web application).
+5. Add "Authorized JavaScript origins" (e.g., `http://localhost:3000`).
+6. Add "Authorized redirect URIs". This MUST be exactly your Supabase project callback URL:
+   `https://<your-project-ref>.supabase.co/auth/v1/callback`
+7. Copy the generated `Client ID` and `Client Secret`.
+
+### B. Configuration in Supabase Dashboard
+1. Go to Authentication -> Providers -> Google.
+2. Enable Google.
+3. Paste the `Client ID` and `Client Secret` obtained from Google.
+4. Save the configuration.
+
+### C. Log In Process (Google)
+```javascript
+async function signInWithGoogle() {
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      // Optional: Where to redirect after login (e.g., back to your app)
+      redirectTo: 'http://localhost:3000/dashboard', 
+    }
+  })
+
+  if (error) {
+    console.error("Error signing in with Google:", error.message)
+    return { error }
+  }
+  return { data }
+}
+```
+
+---
+
+## 4. General Authentication Operations
+
+### A. Log Out
+```javascript
+async function signOut() {
+  const { error } = await supabase.auth.signOut()
+  
+  if (error) {
+    console.error("Error signing out:", error.message)
+    return { error }
+  }
+  console.log("Successfully logged out")
+}
+```
+
+### B. Get Current User Session (On initial load)
+```javascript
+async function getUser() {
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { session } } = await supabase.auth.getSession()
+  
+  return { user, session }
+}
+```
+
+### C. Listen to Auth State Changes
+This is crucial for React/frontend apps to know when a user logs in, logs out, or their token refreshes.
+
+```javascript
+// typically used inside a useEffect in React
+const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+  console.log("Auth event:", event); 
+  // Events: 'INITIAL_SESSION', 'SIGNED_IN', 'SIGNED_OUT', 'TOKEN_REFRESHED', etc.
+  
+  if (session) {
+    console.log("Current user:", session.user)
+  } else {
+    console.log("No active session")
+  }
+})
+
+// Remember to unsubscribe when component unmounts
+// authListener.subscription.unsubscribe()
+```
+
+## 5. Security & Best Practices
+1. Row Level Security (RLS): Always enable RLS on your Supabase tables. Use the `auth.uid()` function in Postgres to ensure users can only read/write their own data.
+2. Environment Variables: Never hardcode your Supabase URL or keys. Always use environment variables (e.g., `.env.local` for Next.js).
+3. Do NOT expose your `service_role` key on the frontend; only use the `anon public key`.
