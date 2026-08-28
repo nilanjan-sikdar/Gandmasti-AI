@@ -1,5 +1,6 @@
-import { supabase } from '../config/supabaseClient.js'
-// import { createUser } from '../services/user.service.js' // Uncomment when user service is ready
+import { supabase } from '../config/supabaseClient.js';
+import User from '../models/user.model.js';
+import crypto from 'crypto';
 
 // signUp
 export async function signUpWithEmail(req, res){
@@ -90,4 +91,47 @@ export async function getUserSession(req, res){
   }
 
   return res.status(200).json({ user, session });
+}
+
+// Token Verification & MongoDB Sync (From the video)
+export const login = async (req, res) => {
+    try {
+        const { token } = req.body;
+
+        // 1. Verify token with Supabase
+        const { data: { user }, error } = await supabase.auth.getUser(token);
+        
+        if (error || !user) {
+            return res.status(401).json({ message: "Invalid token" });
+        }
+
+        // 2. Check MongoDB for the user
+        let dbUser = await User.findOne({ supabaseUid: user.id });
+
+        // 3. Create user if they don't exist
+        if (!dbUser) {
+            dbUser = await User.create({
+                supabaseUid: user.id,
+                email: user.email,
+                name: user.user_metadata?.full_name || "New User",
+                avatar: user.user_metadata?.avatar_url || "" 
+            });
+        }
+
+        // 4. Create custom Session ID and set Cookie (Exactly like the video!)
+        const sessionId = crypto.randomUUID();
+        
+        res.cookie('session', sessionId, {
+            httpOnly: true,
+            secure: false, // Set to true in production
+            sameSite: 'strict',
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
+
+        return res.status(200).json(dbUser);
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: "Login error", error: error.message });
+    }
 }
